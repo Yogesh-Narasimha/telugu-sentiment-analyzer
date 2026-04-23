@@ -1,0 +1,20 @@
+# models — too large for GitHub
+notebooks/models/
+models/
+
+# venv
+venv/
+
+# secrets
+.env
+
+# cache
+__pycache__/
+*.pyc
+.streamlit/
+
+# jupyter checkpoints
+.ipynb_checkpoints/
+
+# HuggingFace cache
+*.cache
