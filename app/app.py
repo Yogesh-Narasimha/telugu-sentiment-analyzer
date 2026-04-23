@@ -277,9 +277,15 @@ with tab2:
     st.markdown("CSV must have a column named **`review`** with Telugu text.")
 
     sample_csv = pd.DataFrame({"review": [
-        "బాహుబలి సినిమా చాలా అద్భుతంగా ఉంది",
-        "ఈ సినిమా చాలా బోరింగ్గా ఉంది",
-        "సినిమా okay గా ఉంది, one time watch చేయవచ్చు"
+        "బాహుబలి సినిమా చాలా అద్భుతంగా ఉంది, విజువల్స్ మరియు నటన అద్భుతం, జీవితంలో చూసిన best సినిమా!",
+        "ఆర్ఆర్ఆర్ సినిమా చూసి చాలా సంతోషంగా అనిపించింది, రాజమౌళి గారి దర్శకత్వం అద్భుతంగా ఉంది",
+        "పుష్ప సినిమాలో అల్లు అర్జున్ నటన చాలా బాగుంది, డైలాగులు మరియు action సూపర్గా ఉన్నాయి",
+        "sequel అవసరమే లేదు original కంటే చాలా తక్కువగా ఉంది, చాలా disappoint అయ్యాను",
+        "director మారినప్పటి నుండి franchise quality పూర్తిగా తగ్గిపోయింది, చాలా నిరాశగా అనిపించింది",
+        "హీరో నటన చాలా చెత్తగా ఉంది, సినిమా మొత్తం నిరాశగా అనిపించింది, థియేటర్ నుండి వెళ్ళిపోయాను",
+        "సినిమా okay గా ఉంది, కొన్ని సీన్లు బాగున్నాయి కానీ మొత్తం average గా అనిపించింది",
+        "హీరో నటన బాగుంది కానీ సినిమా మొత్తం average గా అనిపించింది, one time watch చేయవచ్చు",
+        "మొదటి సగం బాగుంది కానీ రెండవ సగం చాలా slow గా ఉంది, overall mixed feelings అనిపించింది"
     ]}).to_csv(index=False).encode("utf-8")
     st.download_button("⬇ Download Sample CSV", data=sample_csv,
                        file_name="sample_telugu_reviews.csv", mime="text/csv")
