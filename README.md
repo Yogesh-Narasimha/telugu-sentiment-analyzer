@@ -18,7 +18,10 @@ A fine-tuned `xlm-roberta-large` model for Telugu sentiment analysis across 3 cl
 **Key finding:** Model size (560M params) matters more than data augmentation for Telugu Neutral detection.
 
 ---
+## Live Demo
+🔗 [HuggingFace Spaces](https://huggingface.co/spaces/YogeshNarasimha/telugu-sentiment-analyzer)
 
+---
 ## App Features
 
 - **Single Review** — paste any Telugu review, get Positive/Negative/Neutral with confidence bar
