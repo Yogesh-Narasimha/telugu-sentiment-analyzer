@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import json
+import re
 import os
 import time
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -38,15 +39,10 @@ html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .stTabs [data-baseweb="tab"] { border-radius:8px; color:#8a8a9a; font-weight:500; }
 .stTabs [aria-selected="true"] { background:#2a2a3a !important; color:#f5e6c8 !important; }
 .stTextArea textarea { background:#1a1a24 !important; border:1px solid #2a2a3a !important; color:#f5e6c8 !important; border-radius:12px !important; font-family:'Tiro Telugu',serif !important; font-size:1rem !important; }
-/* all buttons base */
 .stButton > button { border-radius:10px !important; font-weight:600 !important; padding:0.6rem 2rem !important; font-size:0.95rem !important; width:100%; }
-/* orange buttons by class */
 .orange-btn button { background:linear-gradient(135deg,#f5a623,#e8902a) !important; color:#0f0f13 !important; border:none !important; }
-/* green button */
 .green-btn button { background:linear-gradient(135deg,#1a4a2e,#2d7a4f) !important; color:#7fffc4 !important; border:2px solid #2d7a4f !important; font-size:0.88rem !important; }
-/* red button */
 .red-btn button { background:linear-gradient(135deg,#4a1a1a,#7a2d2d) !important; color:#ffb3b3 !important; border:2px solid #7a2d2d !important; font-size:0.88rem !important; }
-/* purple button */
 .purple-btn button { background:linear-gradient(135deg,#2a2a3a,#4a4a6a) !important; color:#b3b3ff !important; border:2px solid #4a4a6a !important; font-size:0.88rem !important; }
 hr { border-color:#2a2a3a !important; }
 #MainMenu {visibility:hidden;} footer {visibility:hidden;} header {visibility:hidden;}
@@ -66,8 +62,8 @@ LABEL_COLORS     = {
     "Neutral"      : "#9999ff",
     "Negative"     : "#ff6b6b", "Very Negative": "#e03131",
 }
-GEMINI_MODELS    = ["gemini-2.5-flash","gemini-2.5-pro","gemini-2.0-flash","gemini-1.5-flash","gemini-1.5-pro"]
-MIN_WORDS        = 4
+GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+MIN_WORDS     = 4
 
 POS_TEXT = "బాహుబలి సినిమా చాలా అద్భుతంగా ఉంది, విజువల్స్ మరియు నటన అద్భుతం!"
 NEG_TEXT = "sequel అవసరమే లేదు original కంటే చాలా తక్కువగా ఉంది, చాలా disappoint అయ్యాను"
@@ -76,7 +72,6 @@ NEU_TEXT = "సినిమా okay గా ఉంది, కొన్ని స�
 # ── Model loaders ──────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def load_local_model():
-    # Use local if exists (local dev), else download from HF Hub (Spaces)
     model_source = LOCAL_MODEL_DIR if os.path.exists(LOCAL_MODEL_DIR) else LOCAL_MODEL_HF
     try:
         tok = AutoTokenizer.from_pretrained(model_source)
@@ -109,10 +104,27 @@ def run_inference(text, tokenizer, model, device, id2label, max_len):
         "probs"     : {id2label[i]: float(probs[i]) * 100 for i in range(len(probs))}
     }
 
+def parse_gemini_json(raw_text):
+    """
+    Robustly extract a JSON array from Gemini response.
+    Handles markdown fences, leading text, trailing text.
+    """
+    text = raw_text.strip()
+    # Strip any markdown code fences (```json ... ``` or ``` ... ```)
+    text = re.sub(r'```[\w]*\n?', '', text)
+    text = re.sub(r'```', '', text)
+    text = text.strip()
+    # Extract outermost JSON array
+    start = text.find("[")
+    end   = text.rfind("]") + 1
+    if start == -1 or end <= start:
+        raise ValueError(f"No JSON array found in Gemini response. Raw: {raw_text[:200]}")
+    return json.loads(text[start:end])
+
 def badge_html(label):
     cls  = label.lower().replace(" ", "_")
-    icon = {"Very Positive":"▲▲","Positive":"▲","Neutral":"●",
-            "Negative":"▼","Very Negative":"▼▼"}.get(label,"")
+    icon = {"Very Positive": "▲▲", "Positive": "▲", "Neutral": "●",
+            "Negative": "▼", "Very Negative": "▼▼"}.get(label, "")
     return f'<span class="badge-{cls}">{icon} {label}</span>'
 
 def confidence_bar(probs_dict):
@@ -125,9 +137,9 @@ def confidence_bar(probs_dict):
                              marker_color=color, text=f"{val:.1f}%",
                              textposition="outside", name=label, showlegend=False))
     fig.update_layout(
-        height=max(150, len(labels)*44), margin=dict(l=0,r=70,t=0,b=0),
+        height=max(150, len(labels) * 44), margin=dict(l=0, r=70, t=0, b=0),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(range=[0,115], showgrid=False, zeroline=False, showticklabels=False),
+        xaxis=dict(range=[0, 115], showgrid=False, zeroline=False, showticklabels=False),
         yaxis=dict(showgrid=False, zeroline=False, color="#d4c5a9", tickfont=dict(size=13)),
         bargap=0.35)
     return fig
@@ -189,31 +201,6 @@ with tab1:
         if "example_val" not in st.session_state:
             st.session_state["example_val"] = ""
 
-        st.markdown("""
-        <script>
-        function colorExampleButtons() {
-            const frames = window.parent.document.querySelectorAll('iframe');
-            frames.forEach(frame => {
-                try {
-                    const btns = frame.contentDocument.querySelectorAll('button');
-                    btns.forEach(btn => {
-                        const txt = btn.innerText.trim();
-                        if (txt.includes('Positive')) {
-                            btn.style.cssText += 'background:linear-gradient(135deg,#1a4a2e,#2d7a4f)!important;color:#7fffc4!important;border:2px solid #2d7a4f!important;';
-                        } else if (txt.includes('Negative')) {
-                            btn.style.cssText += 'background:linear-gradient(135deg,#4a1a1a,#7a2d2d)!important;color:#ffb3b3!important;border:2px solid #7a2d2d!important;';
-                        } else if (txt.includes('Neutral')) {
-                            btn.style.cssText += 'background:linear-gradient(135deg,#2a2a3a,#4a4a6a)!important;color:#b3b3ff!important;border:2px solid #4a4a6a!important;';
-                        }
-                    });
-                } catch(e) {}
-            });
-        }
-        setTimeout(colorExampleButtons, 500);
-        setTimeout(colorExampleButtons, 1500);
-        </script>
-        """, unsafe_allow_html=True)
-
         ex_col1, ex_col2, ex_col3 = st.columns(3)
         with ex_col1:
             if st.button("▲  Positive Review", key="ex_pos", use_container_width=True):
@@ -248,7 +235,7 @@ with tab1:
             st.session_state["example_val"] = ""
             st.markdown(f"""
             <div class="result-card">
-                <div class="result-review-text">"{review_text.strip()[:200]}{'...' if len(review_text)>200 else ''}"</div>
+                <div class="result-review-text">"{review_text.strip()[:200]}{'...' if len(review_text) > 200 else ''}"</div>
                 <div style="margin-bottom:0.8rem">{badge_html(result['label'])}</div>
                 <div class="conf-label">Confidence: {result['confidence']:.1f}%</div>
             </div>
@@ -322,7 +309,7 @@ with tab2:
                         for lbl, prob in res["probs"].items():
                             entry[f"{lbl}_%"] = round(prob, 1)
                         results.append(entry)
-                    progress.progress((i+1)/len(df))
+                    progress.progress((i + 1) / len(df))
                     status.text(f"Analyzing {i+1}/{len(df)}...")
                 progress.empty(); status.empty()
                 st.session_state["bulk_results"] = pd.DataFrame(results)
@@ -335,12 +322,12 @@ with tab2:
         st.markdown('<p class="section-header">Dashboard</p>', unsafe_allow_html=True)
 
         m1, m2, m3, m4 = st.columns(4)
-        pos = counts.get("Positive",0) + counts.get("Very Positive",0)
-        neg = counts.get("Negative",0) + counts.get("Very Negative",0)
+        pos = counts.get("Positive", 0) + counts.get("Very Positive", 0)
+        neg = counts.get("Negative", 0) + counts.get("Very Negative", 0)
         neu = counts.get("Neutral", 0)
-        for col, (lbl, val, col_) in zip([m1,m2,m3,m4],
-            [("Total",len(rdf),"#f5e6c8"),("Positive",pos,"#51cf66"),
-             ("Negative",neg,"#ff6b6b"),("Neutral",neu,"#9999ff")]):
+        for col, (lbl, val, col_) in zip([m1, m2, m3, m4],
+            [("Total", len(rdf), "#f5e6c8"), ("Positive", pos, "#51cf66"),
+             ("Negative", neg, "#ff6b6b"),   ("Neutral",  neu, "#9999ff")]):
             with col:
                 st.markdown(f"""<div class="metric-card">
                     <div class="metric-value" style="color:{col_}">{val}</div>
@@ -355,8 +342,8 @@ with tab2:
             pie = px.pie(values=counts.values, names=counts.index,
                          color=counts.index, color_discrete_map=LABEL_COLORS, hole=0.5)
             pie.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                               font_color="#d4c5a9", margin=dict(t=10,b=10))
-            st.plotly_chart(pie, use_container_width=True, config={"displayModeBar":False})
+                               font_color="#d4c5a9", margin=dict(t=10, b=10))
+            st.plotly_chart(pie, use_container_width=True, config={"displayModeBar": False})
         with ch2:
             st.markdown('<p class="section-header">Confidence Distribution</p>', unsafe_allow_html=True)
             hist = px.histogram(rdf, x="confidence", color="sentiment", nbins=20,
@@ -365,34 +352,34 @@ with tab2:
                                 font_color="#d4c5a9",
                                 xaxis=dict(color="#8a8a9a", title="Confidence (%)"),
                                 yaxis=dict(color="#8a8a9a", title="Count"),
-                                margin=dict(t=10,b=10))
-            st.plotly_chart(hist, use_container_width=True, config={"displayModeBar":False})
+                                margin=dict(t=10, b=10))
+            st.plotly_chart(hist, use_container_width=True, config={"displayModeBar": False})
 
         ch3, ch4 = st.columns(2)
         with ch3:
             st.markdown('<p class="section-header">Average Confidence per Class</p>', unsafe_allow_html=True)
             avg_conf = rdf.groupby("sentiment")["confidence"].mean().reset_index()
-            avg_conf.columns = ["Sentiment","Avg Confidence (%)"]
+            avg_conf.columns = ["Sentiment", "Avg Confidence (%)"]
             bar_conf = px.bar(avg_conf, x="Sentiment", y="Avg Confidence (%)",
                               color="Sentiment", color_discrete_map=LABEL_COLORS,
                               text="Avg Confidence (%)")
             bar_conf.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
             bar_conf.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                    font_color="#d4c5a9", showlegend=False,
-                                   yaxis=dict(color="#8a8a9a", range=[0,110]),
-                                   xaxis=dict(color="#8a8a9a"), margin=dict(t=30,b=10))
-            st.plotly_chart(bar_conf, use_container_width=True, config={"displayModeBar":False})
+                                   yaxis=dict(color="#8a8a9a", range=[0, 110]),
+                                   xaxis=dict(color="#8a8a9a"), margin=dict(t=30, b=10))
+            st.plotly_chart(bar_conf, use_container_width=True, config={"displayModeBar": False})
         with ch4:
             st.markdown('<p class="section-header">Review Count per Class</p>', unsafe_allow_html=True)
-            count_df = counts.reset_index(); count_df.columns = ["Sentiment","Count"]
+            count_df = counts.reset_index(); count_df.columns = ["Sentiment", "Count"]
             bar_count = px.bar(count_df, x="Sentiment", y="Count",
                                color="Sentiment", color_discrete_map=LABEL_COLORS, text="Count")
             bar_count.update_traces(textposition="outside")
             bar_count.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                     font_color="#d4c5a9", showlegend=False,
                                     yaxis=dict(color="#8a8a9a"), xaxis=dict(color="#8a8a9a"),
-                                    margin=dict(t=30,b=10))
-            st.plotly_chart(bar_count, use_container_width=True, config={"displayModeBar":False})
+                                    margin=dict(t=30, b=10))
+            st.plotly_chart(bar_count, use_container_width=True, config={"displayModeBar": False})
 
         st.markdown('<p class="section-header">Confidence Spread per Class</p>', unsafe_allow_html=True)
         box = px.box(rdf, x="sentiment", y="confidence", color="sentiment",
@@ -401,9 +388,10 @@ with tab2:
                           font_color="#d4c5a9", showlegend=False,
                           yaxis=dict(color="#8a8a9a", title="Confidence (%)"),
                           xaxis=dict(color="#8a8a9a", title=""),
-                          margin=dict(t=10,b=10), height=300)
-        st.plotly_chart(box, use_container_width=True, config={"displayModeBar":False})
+                          margin=dict(t=10, b=10), height=300)
+        st.plotly_chart(box, use_container_width=True, config={"displayModeBar": False})
 
+        # ── Gemini Theme Extraction ────────────────────────────────────
         st.markdown("---")
         st.markdown('<p class="section-header">Theme Extraction via Gemini API</p>', unsafe_allow_html=True)
         st.markdown("Get your free API key from [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)")
@@ -417,40 +405,56 @@ with tab2:
             try:
                 from google import genai as google_genai
                 from google.genai import types as genai_types
-                gclient  = google_genai.Client(api_key=gemini_key)
-                sample   = "\n".join(rdf["review"].head(30).tolist())
-                prompt   = f"""Analyze these Telugu reviews. Extract top 5 recurring themes.
-Return ONLY a JSON array. No markdown. No explanation. Just the array.
-Format: [{{"theme":"...","sentiment":"positive/negative/neutral","description":"1 line"}}]
-Reviews:\n{sample}"""
-                response = gclient.models.generate_content(
-                    model=gemini_model_sel, contents=prompt,
-                    config=genai_types.GenerateContentConfig(max_output_tokens=500))
-                raw   = response.text.strip().replace("```json","").replace("```","").strip()
-                start = raw.find("["); end = raw.rfind("]") + 1
-                if start != -1 and end > start: raw = raw[start:end]
-                themes = json.loads(raw)
+
+                gclient = google_genai.Client(api_key=gemini_key)
+                sample  = "\n".join(rdf["review"].head(30).tolist())
+
+                # ── Strict prompt: no markdown, raw JSON only ──────────
+                prompt = f"""Analyze these Telugu movie reviews and extract the top 5 recurring themes.
+
+You MUST return ONLY a raw JSON array. No markdown. No code fences. No explanation before or after.
+Start your response with [ and end with ]. Nothing else outside the array.
+
+Format exactly like this:
+[{{"theme":"Acting","sentiment":"positive","description":"Viewers praised lead actor performances"}},{{"theme":"Story","sentiment":"negative","description":"Plot found weak or predictable"}}]
+
+Reviews:
+{sample}"""
+
+                with st.spinner("Extracting themes..."):
+                    response = gclient.models.generate_content(
+                        model=gemini_model_sel,
+                        contents=prompt,
+                        config=genai_types.GenerateContentConfig(max_output_tokens=600)
+                    )
+
+                # ── Robust JSON parsing ────────────────────────────────
+                themes = parse_gemini_json(response.text)
+
                 st.success(f"Extracted {len(themes)} themes using {gemini_model_sel}")
                 for t in themes:
-                    color = {"positive":"#51cf66","negative":"#ff6b6b","neutral":"#9999ff"}.get(
-                        t.get("sentiment","neutral").lower(), "#9999ff")
+                    color = {"positive": "#51cf66", "negative": "#ff6b6b", "neutral": "#9999ff"}.get(
+                        t.get("sentiment", "neutral").lower(), "#9999ff")
                     st.markdown(f"""<div class="result-card" style="margin-bottom:0.5rem;padding:0.8rem 1.2rem">
                         <span style="color:{color};font-weight:600">{t.get('theme','')}</span>
                         <span style="color:#8a8a9a;font-size:0.85rem;margin-left:0.5rem">· {t.get('sentiment','')}</span>
                         <div style="color:#d4c5a9;font-size:0.9rem;margin-top:0.2rem">{t.get('description','')}</div>
                     </div>""", unsafe_allow_html=True)
-            except json.JSONDecodeError:
-                st.error("Gemini returned malformed JSON. Try again.")
+
+            except json.JSONDecodeError as e:
+                st.error(f"Gemini returned malformed JSON. Try again. Detail: {str(e)[:100]}")
+            except ValueError as e:
+                st.error(f"Could not parse Gemini response. Try again. Detail: {str(e)[:150]}")
             except Exception as e:
                 err = str(e)
                 if "404" in err or "not found" in err.lower():
                     st.error(f"`{gemini_model_sel}` not available. Try gemini-2.5-flash.")
                 elif "429" in err or "quota" in err.lower():
-                    st.error("Rate limit hit. Wait 1 min and retry.")
+                    st.error("Rate limit hit. Wait 1 minute and retry.")
                 elif "503" in err or "unavailable" in err.lower():
                     st.error("Gemini is overloaded. Try again in a minute.")
                 elif "401" in err or "api_key" in err.lower():
-                    st.error("Invalid API key.")
+                    st.error("Invalid API key. Check your key from aistudio.google.com")
                 else:
                     st.error(f"Error: {err}")
 
@@ -519,7 +523,7 @@ with tab3:
     st.markdown('<p class="section-header">Project</p>', unsafe_allow_html=True)
     st.markdown("""<div class="result-card">
         <div style="color:#d4c5a9;font-size:0.9rem;line-height:2">
-            <b style="color:#f5a623">Assignment:</b> T8.3 — Indic Review & Sentiment Analyzer<br>
+            <b style="color:#f5a623">Assignment:</b> T8.3 — Indic Review &amp; Sentiment Analyzer<br>
             <b style="color:#f5a623">Course:</b> Statistical Methods in AI · IIIT Hyderabad 2025–26<br>
             <b style="color:#f5a623">Team:</b> Tech Titans<br>
             <b style="color:#f5a623">LLMs used:</b> Claude (code scaffolding, data generation), Gemini (neutral data generation, theme extraction)
